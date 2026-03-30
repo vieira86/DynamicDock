@@ -1,0 +1,16 @@
+HEADER    PROTEIN TEST STRUCTURE
+ATOM      1  N   MET A   1       8.510   7.590   9.940  1.00 20.00           N  
+ATOM      2  CA  MET A   1       9.980   7.830  10.140  1.00 20.00           C  
+ATOM      3  C   MET A   1      10.740   9.110  10.010  1.00 20.00           C  
+ATOM      4  O   MET A   1      10.160  10.190  10.270  1.00 20.00           O  
+ATOM      5  CB  MET A   1      10.650   6.820  11.290  1.00 20.00           C  
+ATOM      6  CG  MET A   1      12.200   6.610  11.410  1.00 20.00           C  
+ATOM      7  SD  MET A   1      12.820   5.240  11.880  1.00 20.00           S  
+ATOM      8  CE  MET A   1      14.460   5.470  11.420  1.00 20.00           C  
+HETATM    9  N   LIG B   1      15.000   8.000  12.000  1.00 20.00           N  
+HETATM   10  C   LIG B   1      16.000   8.500  12.500  1.00 20.00           C  
+HETATM   11  O   LIG B   1      16.800   7.800  12.800  1.00 20.00           O  
+HETATM   12  C   LIG B   1      16.200   9.900  12.700  1.00 20.00           C  
+HETATM   13  O   LIG B   1      15.400  10.600  12.400  1.00 20.00           O  
+TER
+END

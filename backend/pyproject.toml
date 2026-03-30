@@ -1,0 +1,35 @@
+[tool.poetry]
+name = "dynamic-dock-backend"
+version = "0.1.0"
+description = "Backend for Dynamic Dock - A molecular docking platform"
+authors = ["Your Name <your.email@example.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+fastapi = "^0.100.0"
+uvicorn = "^0.22.0"
+biopython = "^1.81"
+rdkit = "^2023.3.1"
+numpy = "^1.24.3"
+pydantic = "^2.0"
+python-multipart = "^0.0.6"
+aiofiles = "^23.1.0"
+openbabel = "^3.1.1"
+
+[tool.poetry.dev-dependencies]
+pytest = "^7.3.1"
+black = "^23.3.0"
+isort = "^5.12.0"
+flake8 = "^6.0.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
