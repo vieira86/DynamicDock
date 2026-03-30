@@ -1,0 +1,26 @@
+# Web Framework
+fastapi>=0.68.0
+uvicorn>=0.15.0
+python-multipart>=0.0.5
+pydantic>=1.8.0
+
+# Molecular Libraries
+biopython>=1.79
+rdkit>=2022.9.3
+numpy>=1.21.0
+openbabel>=3.1.0
+
+# Utilitários
+python-dotenv>=0.19.0
+requests>=2.26.0
+
+# CORS
+starlette>=0.14.2
+
+# Tipos
+typing-extensions>=3.10.0
+
+# Desenvolvimento
+pytest>=6.2.5
+black>=21.7b0
+flake8>=3.9.0
