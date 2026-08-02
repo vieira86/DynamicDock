@@ -1,0 +1,11 @@
+{
+  "name": "dynamic-dock",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "concurrently \"cd frontend && npm start\" \"cd backend && poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload\"",
+    "build": "cd frontend && npm run build"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
