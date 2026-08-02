@@ -22,7 +22,7 @@ Install these once, regardless of OS:
 - **Python 3.9+** — https://python.org (on Windows, tick "Add Python to PATH" during install)
 - **Node.js 18+** (includes npm) — https://nodejs.org
 
-You do **not** need to install AutoDock Vina or Open Babel yourself — `setup.py` below installs both automatically for your OS (Vina by downloading the official binary, Open Babel via the `openbabel-wheel` pip package). If that fails for your specific platform, the script prints manual instructions (conda/brew/apt/installer) as a fallback.
+You do **not** need to install AutoDock Vina or Open Babel yourself — `setup.py` below installs both automatically for your OS (Vina by downloading the official binary, Open Babel via the `openbabel-wheel` pip package). It also checks that Open Babel actually runs afterward and, on the rare Windows builds with a broken plugin, fixes that automatically too. Only if all of that fails does it print manual instructions (conda/brew/apt/installer) as a last resort.
 
 ### Quick start
 
@@ -62,23 +62,51 @@ The frontend expects the API at `http://localhost:8000` by default; override wit
 
 ## Configuration
 
-All configuration is via environment variables (optional — sensible defaults are used otherwise):
+All configuration is via environment variables (optional — sensible defaults are used otherwise). Backend variables can be set either as real environment variables, or - more convenient, especially on Windows - by copying `.env.example` to `.env` in the project root and editing it as a plain text file:
 
 | Variable | Where | Purpose |
 |---|---|---|
 | `REACT_APP_API_URL` | frontend/.env | Backend URL the frontend talks to (default `http://localhost:8000`) |
-| `VINA_EXECUTABLE` | backend | Full path to the AutoDock Vina binary, overriding auto-detection |
-| `OBABEL_EXECUTABLE` | backend | Full path to `obabel`, overriding auto-detection |
-| `DYNAMIC_DOCK_VINA_DIR` | backend | Where the Vina binary/results live (default `<project>/vina`) |
-| `DYNAMIC_DOCK_RESULTS_DIR` | backend | Where docking results are written (default `<vina>/results`) |
-| `DYNAMIC_DOCK_CORS_ORIGINS` | backend | Extra comma-separated origins allowed to call the API |
+| `VINA_EXECUTABLE` | backend (.env) | Full path to the AutoDock Vina binary, overriding auto-detection |
+| `OBABEL_EXECUTABLE` | backend (.env) | Full path to `obabel`, overriding auto-detection |
+| `DYNAMIC_DOCK_VINA_DIR` | backend (.env) | Where the Vina binary/results live (default `<project>/vina`) |
+| `DYNAMIC_DOCK_RESULTS_DIR` | backend (.env) | Where docking results are written (default `<vina>/results`) |
+| `DYNAMIC_DOCK_CORS_ORIGINS` | backend (.env) | Extra comma-separated origins allowed to call the API |
 
 ## Troubleshooting
 
 - **"AutoDock Vina executable was not found"** — run `python setup.py` again (check your internet connection), or download it manually from https://github.com/ccsb-scripps/AutoDock-Vina/releases and place it at `vina/vina` (`vina/vina.exe` on Windows).
-- **"Open Babel was not found"** — re-run `python setup.py` (it installs Open Babel via pip automatically). If it still fails, install it manually: `brew install open-babel` (macOS), `sudo apt install openbabel` (Debian/Ubuntu), or `conda install -c conda-forge openbabel` (any OS) — then restart the backend.
+- **"Open Babel was not found"** — re-run `python setup.py`. It installs Open Babel via pip, verifies it actually runs, and auto-fixes the known Windows plugin bug described below if it hits it. If it still fails after that, see [Open Babel via conda](#open-babel-via-conda-last-resort) as a last resort.
+- **`obabel.exe` shows a Windows "entry point not found" popup for a specific plugin (e.g. `formats_json.obf`)** — this is a broken/incompatible plugin file in a specific `openbabel-wheel` build, not a missing Visual C++ Redistributable. `setup.py` now detects this automatically (it runs a health check after installing) and disables the offending plugin for you — just re-run `python setup.py`, no manual steps needed. If it's still broken afterward, use the conda fallback below.
 - **Check system status** — visit `http://localhost:8000/api/health` to see whether Vina/Open Babel are detected and where.
 - **Port already in use** — stop whatever else is using 3000/8000, or change the backend port and update `REACT_APP_API_URL` accordingly.
+
+### Open Babel via conda (last resort)
+
+`setup.py` installs Open Babel automatically and self-heals the most common Windows issue (a broken format plugin), so most people never need this section. If `python setup.py` still reports Open Babel isn't working after a re-run, install it through conda instead - it's the most reliable distribution channel, especially on Windows - and point Dynamic Dock at it:
+
+1. Install Miniconda if you don't already have Anaconda/Miniconda: https://docs.conda.io/en/latest/miniconda.html
+2. Open the **Anaconda Prompt** (Windows) or a regular terminal (macOS/Linux) and create an environment with Open Babel in it:
+   ```bash
+   conda create -n dynamicdock_obabel -c conda-forge openbabel -y
+   ```
+3. Find the `obabel` executable's full path:
+   ```bash
+   conda activate dynamicdock_obabel
+   where obabel        # Windows
+   which obabel        # macOS/Linux
+   ```
+4. In the project root, copy `.env.example` to `.env` and add the path you just found, for example:
+   ```
+   OBABEL_EXECUTABLE=C:\Users\<you>\miniconda3\envs\dynamicdock_obabel\Library\bin\obabel.exe
+   ```
+5. Run setup skipping the pip-based Open Babel install, then start the app as usual:
+   ```bash
+   python setup.py --skip-openbabel
+   python run.py
+   ```
+
+Setting `OBABEL_EXECUTABLE` in `.env` means Dynamic Dock always finds this Open Babel install, whether or not the conda environment happens to be active in your terminal.
 
 ## Project Structure
 

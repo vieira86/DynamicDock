@@ -15,8 +15,10 @@ What it does:
      already present in vina/.
   4. Installs Open Babel ('obabel') automatically via the 'openbabel-wheel'
      pip package, which ships prebuilt binaries for Windows, macOS and
-     Linux. Falls back to printing manual install instructions if that
-     isn't possible for your Python/OS combination.
+     Linux, then verifies it actually runs. If a known Windows plugin bug
+     is detected, it's disabled automatically and Open Babel is re-checked -
+     no manual steps needed for the common case. Only prints manual/conda
+     install instructions as a last resort, if that self-repair doesn't work.
 
 Nothing here is required to happen in a specific order by hand - just run
 this script, then `python run.py` to start the app.
@@ -211,6 +213,64 @@ def _print_obabel_manual_instructions():
     else:
         print("    conda install -c conda-forge openbabel")
         print("  or download an installer from https://openbabel.org")
+    print("Then, if needed, point Dynamic Dock at it: copy .env.example to .env")
+    print("and set OBABEL_EXECUTABLE=<full path to obabel>.")
+
+
+# Plugin files known to ship broken (missing DLL entry points) in some
+# openbabel-wheel builds on Windows. Dynamic Dock never uses these formats,
+# so disabling them is safe and keeps setup fully automatic.
+KNOWN_BROKEN_OBABEL_PLUGINS = ["formats_json.obf"]
+
+
+def _obabel_plugin_dir(venv_bin_dir):
+    """Where openbabel-wheel puts its format plugin (.obf) files."""
+    if platform.system() == "Windows":
+        return os.path.join(VENV_DIR, "Lib", "site-packages", "openbabel", "bin")
+    # venv_bin_dir is .../<venv>/bin ; site-packages sits next to it under lib/
+    site_packages_guess = os.path.join(os.path.dirname(venv_bin_dir), "lib")
+    if os.path.isdir(site_packages_guess):
+        for entry in os.listdir(site_packages_guess):
+            candidate = os.path.join(site_packages_guess, entry, "site-packages", "openbabel", "bin")
+            if os.path.isdir(candidate):
+                return candidate
+    return None
+
+
+def _obabel_health_check(obabel_path):
+    """
+    Run obabel with a timeout to check it actually works, instead of letting
+    a hung/crashed process (e.g. a Windows 'entry point not found' popup)
+    block setup forever. `-L formats` is used deliberately - it forces obabel
+    to load every installed format plugin, which is exactly the step that
+    fails when a plugin file is broken (a lighter command like `-V` can
+    succeed even though a broken plugin is present).
+    """
+    try:
+        result = subprocess.run(
+            [obabel_path, "-L", "formats"], capture_output=True, text=True, timeout=15
+        )
+        return result.returncode == 0 and "pdb" in result.stdout.lower()
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+
+
+def _disable_known_broken_obabel_plugins(venv_bin_dir):
+    plugin_dir = _obabel_plugin_dir(venv_bin_dir)
+    if not plugin_dir or not os.path.isdir(plugin_dir):
+        return False
+
+    disabled_any = False
+    for name in KNOWN_BROKEN_OBABEL_PLUGINS:
+        path = os.path.join(plugin_dir, name)
+        if os.path.isfile(path):
+            try:
+                os.rename(path, path + ".disabled")
+                print(f"Disabled known-broken Open Babel plugin: {path}")
+                disabled_any = True
+            except OSError as exc:
+                print(f"WARNING: could not disable {path}: {exc}")
+    return disabled_any
 
 
 def step_install_obabel(skip):
@@ -244,11 +304,30 @@ def step_install_obabel(skip):
     venv_bin_dir = os.path.dirname(py)
     exe_name = "obabel.exe" if platform.system() == "Windows" else "obabel"
     candidate = os.path.join(venv_bin_dir, exe_name)
-    if os.path.isfile(candidate):
-        print(f"Open Babel installed at {candidate}")
-    else:
+    if not os.path.isfile(candidate):
         print("WARNING: openbabel-wheel installed, but the 'obabel' command wasn't found where expected.")
         _print_obabel_manual_instructions()
+        return
+
+    print(f"Open Babel installed at {candidate}")
+    print("Verifying it actually runs...")
+    if _obabel_health_check(candidate):
+        print("Open Babel is working.")
+        return
+
+    # A known bug in some Windows builds: a specific format plugin fails to
+    # load and blocks obabel with a system popup. Disable it automatically
+    # and retry - no user action needed for the common case.
+    print("Open Babel didn't respond as expected - checking for a known plugin issue...")
+    if _disable_known_broken_obabel_plugins(venv_bin_dir) and _obabel_health_check(candidate):
+        print("Fixed automatically - Open Babel is working now.")
+        return
+
+    print(
+        "\nWARNING: Open Babel was installed but isn't working correctly on this "
+        "machine (this can happen with certain Windows setups)."
+    )
+    _print_obabel_manual_instructions()
 
 
 def main():

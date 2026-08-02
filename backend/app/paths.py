@@ -22,6 +22,18 @@ BACKEND_DIR = os.path.dirname(APP_DIR)
 # project root (contains frontend/, backend/, vina/, etc.)
 PROJECT_ROOT = os.path.dirname(BACKEND_DIR)
 
+# Load a .env file from the project root if present, so settings like
+# VINA_EXECUTABLE or OBABEL_EXECUTABLE can be set by editing a text file
+# instead of exporting system environment variables (much more convenient
+# on Windows). This must happen before the os.environ.get() calls below.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
+    load_dotenv(os.path.join(BACKEND_DIR, ".env"))
+except ImportError:
+    pass
+
 
 def _env_path(name: str, default: str) -> str:
     value = os.environ.get(name)
