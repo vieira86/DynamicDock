@@ -8,11 +8,13 @@ pydantic>=1.8.0
 biopython>=1.79
 rdkit>=2022.9.3
 numpy>=1.21.0
-# NOTE: Open Babel is used as an external command-line tool (obabel), not as
-# a Python package - it is intentionally NOT listed here because its pip
-# wheels are unreliable on several platforms (especially Windows). Install
-# it via conda/brew/apt/installer instead - see README.md or run setup.py,
-# which checks for it and prints OS-specific instructions.
+# NOTE: Open Babel is used as an external command-line tool (obabel), not
+# imported in Python, so it's intentionally NOT listed here as a hard
+# requirement - if it fails to install, the rest of setup shouldn't be
+# blocked. `python setup.py` installs it automatically (via the
+# 'openbabel-wheel' package, which has prebuilt binaries for Windows,
+# macOS and Linux) as its own best-effort step. See README.md for manual
+# install instructions if that doesn't work for your platform.
 
 # Utilitários
 python-dotenv>=0.19.0

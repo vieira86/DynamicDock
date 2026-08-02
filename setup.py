@@ -13,9 +13,10 @@ What it does:
   3. Downloads the AutoDock Vina executable that matches your OS/CPU
      automatically (from the official GitHub releases), unless one is
      already present in vina/.
-  4. Checks whether Open Babel ('obabel') is available and prints
-     installation instructions for your OS if it isn't (Open Babel doesn't
-     ship a single portable binary, so it isn't auto-downloaded).
+  4. Installs Open Babel ('obabel') automatically via the 'openbabel-wheel'
+     pip package, which ships prebuilt binaries for Windows, macOS and
+     Linux. Falls back to printing manual install instructions if that
+     isn't possible for your Python/OS combination.
 
 Nothing here is required to happen in a specific order by hand - just run
 this script, then `python run.py` to start the app.
@@ -60,7 +61,7 @@ def run(cmd, **kwargs):
 
 
 def step_create_venv():
-    banner("1/4  Python virtual environment")
+    banner("1/4  Python virtual environment and dependencies")
     if os.path.isfile(venv_python_path()):
         print(f"Virtual environment already exists at {VENV_DIR}, skipping creation.")
     else:
@@ -197,16 +198,9 @@ def step_download_vina(skip, force):
     print(f"AutoDock Vina installed at {target_path}")
 
 
-def step_check_obabel():
-    banner("4/4  Open Babel check")
-    obabel = shutil.which("obabel") or shutil.which("obabel.exe")
-    if obabel:
-        print(f"Open Babel found: {obabel}")
-        return
-
+def _print_obabel_manual_instructions():
     system = platform.system()
-    print("Open Babel ('obabel') was NOT found on your PATH.")
-    print("Dynamic Dock needs it to convert molecule file formats. Install it with:")
+    print("You can install it manually instead:")
     if system == "Darwin":
         print("    brew install open-babel")
         print("  or, with conda:  conda install -c conda-forge openbabel")
@@ -215,8 +209,46 @@ def step_check_obabel():
         print("    sudo dnf install openbabel      (Fedora)")
         print("  or, with conda:  conda install -c conda-forge openbabel")
     else:
-        print("    conda install -c conda-forge openbabel   (recommended on Windows)")
+        print("    conda install -c conda-forge openbabel")
         print("  or download an installer from https://openbabel.org")
+
+
+def step_install_obabel(skip):
+    banner("4/4  Open Babel (obabel)")
+    if skip:
+        print("Skipped (--skip-openbabel).")
+        return
+
+    # Already available system-wide (Homebrew, apt, conda, a previous manual
+    # install, ...)? Nothing to do.
+    existing = shutil.which("obabel") or shutil.which("obabel.exe")
+    if existing:
+        print(f"Open Babel already available: {existing}")
+        return
+
+    py = venv_python_path()
+    print("Installing Open Babel via pip ('openbabel-wheel' - prebuilt for Windows/macOS/Linux)...")
+    try:
+        run([py, "-m", "pip", "install", "openbabel-wheel"])
+    except subprocess.CalledProcessError:
+        print(
+            "\nWARNING: automatic Open Babel install failed (no prebuilt wheel for "
+            "your Python version/OS, or a network issue)."
+        )
+        _print_obabel_manual_instructions()
+        return
+
+    # openbabel-wheel installs the `obabel` CLI next to the venv's own
+    # Python interpreter, not necessarily on the system PATH - check there
+    # directly rather than relying on shutil.which().
+    venv_bin_dir = os.path.dirname(py)
+    exe_name = "obabel.exe" if platform.system() == "Windows" else "obabel"
+    candidate = os.path.join(venv_bin_dir, exe_name)
+    if os.path.isfile(candidate):
+        print(f"Open Babel installed at {candidate}")
+    else:
+        print("WARNING: openbabel-wheel installed, but the 'obabel' command wasn't found where expected.")
+        _print_obabel_manual_instructions()
 
 
 def main():
@@ -226,6 +258,7 @@ def main():
     parser.add_argument(
         "--force-vina", action="store_true", help="Re-download AutoDock Vina even if already present."
     )
+    parser.add_argument("--skip-openbabel", action="store_true", help="Skip installing Open Babel.")
     args = parser.parse_args()
 
     print("Dynamic Dock setup")
@@ -236,7 +269,7 @@ def main():
         step_create_venv()
         step_npm_install(args.skip_npm)
         step_download_vina(args.skip_vina, args.force_vina)
-        step_check_obabel()
+        step_install_obabel(args.skip_openbabel)
     except subprocess.CalledProcessError as exc:
         banner("Setup failed")
         print(f"Command failed with exit code {exc.returncode}: {exc.cmd}")

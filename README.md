@@ -21,13 +21,8 @@ Install these once, regardless of OS:
 
 - **Python 3.9+** — https://python.org (on Windows, tick "Add Python to PATH" during install)
 - **Node.js 18+** (includes npm) — https://nodejs.org
-- **Open Babel** (`obabel`) — used to convert molecule file formats:
-  - macOS: `brew install open-babel`
-  - Linux: `sudo apt install openbabel` (Debian/Ubuntu) or `sudo dnf install openbabel` (Fedora)
-  - Windows: `conda install -c conda-forge openbabel`, or download an installer from https://openbabel.org
-  - Any OS with conda: `conda install -c conda-forge openbabel`
 
-You do **not** need to install AutoDock Vina yourself — the setup script below downloads the correct executable for your OS/CPU automatically.
+You do **not** need to install AutoDock Vina or Open Babel yourself — `setup.py` below installs both automatically for your OS (Vina by downloading the official binary, Open Babel via the `openbabel-wheel` pip package). If that fails for your specific platform, the script prints manual instructions (conda/brew/apt/installer) as a fallback.
 
 ### Quick start
 
@@ -38,11 +33,11 @@ python setup.py
 python run.py
 ```
 
-`setup.py` creates a Python virtual environment, installs backend dependencies, runs `npm install` for the frontend, and downloads the AutoDock Vina binary for your OS. `run.py` then starts both the backend and frontend together and opens the app at **http://localhost:3000**. Press `Ctrl+C` to stop.
+`setup.py` creates a Python virtual environment, installs backend dependencies, runs `npm install` for the frontend, downloads the AutoDock Vina binary for your OS, and installs Open Babel. `run.py` then starts both the backend and frontend together and opens the app at **http://localhost:3000**. Press `Ctrl+C` to stop.
 
-Re-running `python setup.py` any time is safe — it skips steps that are already done (existing venv, existing Vina binary) unless you pass `--force-vina`.
+Re-running `python setup.py` any time is safe — it skips steps that are already done (existing venv, existing Vina binary, Open Babel already installed) unless you pass `--force-vina`. Other flags: `--skip-npm`, `--skip-vina`, `--skip-openbabel`.
 
-If something is missing (e.g. Open Babel), Dynamic Dock still starts and shows a "Setup needed" banner in the UI explaining what to install.
+If something is still missing after setup (rare — e.g. no prebuilt Open Babel wheel exists yet for a brand-new Python version), Dynamic Dock still starts and shows a "Setup needed" banner in the UI explaining what to install manually.
 
 ### Manual setup (equivalent, if you prefer to run each step yourself)
 
@@ -81,7 +76,7 @@ All configuration is via environment variables (optional — sensible defaults a
 ## Troubleshooting
 
 - **"AutoDock Vina executable was not found"** — run `python setup.py` again (check your internet connection), or download it manually from https://github.com/ccsb-scripps/AutoDock-Vina/releases and place it at `vina/vina` (`vina/vina.exe` on Windows).
-- **"Open Babel was not found"** — install it as described above, then restart the backend.
+- **"Open Babel was not found"** — re-run `python setup.py` (it installs Open Babel via pip automatically). If it still fails, install it manually: `brew install open-babel` (macOS), `sudo apt install openbabel` (Debian/Ubuntu), or `conda install -c conda-forge openbabel` (any OS) — then restart the backend.
 - **Check system status** — visit `http://localhost:8000/api/health` to see whether Vina/Open Babel are detected and where.
 - **Port already in use** — stop whatever else is using 3000/8000, or change the backend port and update `REACT_APP_API_URL` accordingly.
 

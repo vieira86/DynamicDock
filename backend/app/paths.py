@@ -13,6 +13,7 @@ for Docker deployments or custom installs.
 import os
 import platform
 import shutil
+import sys
 
 # backend/app
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -90,8 +91,24 @@ def find_vina_executable():
 
 
 def find_obabel_executable():
-    """Locate the Open Babel `obabel` executable, or None if missing."""
+    """
+    Locate the Open Babel `obabel` executable, in this order:
+      1. OBABEL_EXECUTABLE environment variable (explicit override)
+      2. Installed via pip ('openbabel-wheel', by setup.py) into this venv -
+         its CLI lands next to the running Python interpreter, not
+         necessarily on the system PATH.
+      3. `obabel` (or `obabel.exe`) available on the system PATH (Homebrew,
+         apt, conda, a manual install, ...)
+    Returns None if nothing is found.
+    """
     override = os.environ.get("OBABEL_EXECUTABLE")
     if override and os.path.isfile(override):
         return override
+
+    exe_name = "obabel.exe" if platform.system() == "Windows" else "obabel"
+    venv_bin_dir = os.path.join(sys.prefix, "Scripts" if platform.system() == "Windows" else "bin")
+    venv_candidate = os.path.join(venv_bin_dir, exe_name)
+    if os.path.isfile(venv_candidate):
+        return venv_candidate
+
     return find_executable("obabel")
