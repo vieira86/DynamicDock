@@ -52,7 +52,7 @@ CLEAN_STRUCTURES_DIR = _env_path(
 UPLOADED_STRUCTURES_DIR = _env_path(
     "DYNAMIC_DOCK_UPLOAD_DIR", os.path.join(BACKEND_DIR, "uploaded_structures")
 )
-# Where the AutoDock Vina executable lives (and where setup.py downloads it to)
+# Where the AutoDock Vina executable lives (setup.py copies the bundled one from vina/bin/ here)
 VINA_DIR = _env_path("DYNAMIC_DOCK_VINA_DIR", os.path.join(PROJECT_ROOT, "vina"))
 # Default location for docking results when the client doesn't specify one
 RESULTS_DIR = _env_path("DYNAMIC_DOCK_RESULTS_DIR", os.path.join(VINA_DIR, "results"))

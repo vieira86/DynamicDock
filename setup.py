@@ -10,9 +10,10 @@ What it does:
   1. Creates a Python virtual environment (.venv) and installs the backend
      dependencies from requirements.txt.
   2. Runs `npm install` for the React frontend.
-  3. Downloads the AutoDock Vina executable that matches your OS/CPU
-     automatically (from the official GitHub releases), unless one is
-     already present in vina/.
+  3. Installs the AutoDock Vina executable that matches your OS/CPU. The
+     official v1.2.7 binaries ship with the project (vina/bin/), so this
+     works offline; it only downloads from the official GitHub release if
+     the bundled copy is missing. The binary is then self-tested.
   4. Installs Open Babel ('obabel') automatically via the 'openbabel-wheel'
      pip package, which ships prebuilt binaries for Windows, macOS and
      Linux, then verifies it actually runs. If a known Windows plugin bug
@@ -25,7 +26,6 @@ this script, then `python run.py` to start the app.
 """
 
 import argparse
-import json
 import os
 import platform
 import shutil
@@ -41,8 +41,16 @@ VINA_DIR = os.path.join(PROJECT_ROOT, "vina")
 VENV_DIR = os.path.join(PROJECT_ROOT, ".venv")
 REQUIREMENTS_FILE = os.path.join(PROJECT_ROOT, "requirements.txt")
 
-VINA_RELEASES_API = "https://api.github.com/repos/ccsb-scripps/AutoDock-Vina/releases/latest"
+# AutoDock Vina is bundled in vina/bin/<platform>/ (official v1.2.7 binaries,
+# Apache 2.0). The version is pinned on purpose: "latest" could change the
+# CLI/output format under us, and the GitHub API is rate-limited per IP
+# (a whole classroom behind one school IP would hit that limit quickly).
+VINA_VERSION = "1.2.7"
+VINA_BUNDLE_DIR = os.path.join(VINA_DIR, "bin")
 VINA_RELEASES_PAGE = "https://github.com/ccsb-scripps/AutoDock-Vina/releases"
+VINA_DOWNLOAD_BASE = (
+    f"https://github.com/ccsb-scripps/AutoDock-Vina/releases/download/v{VINA_VERSION}/"
+)
 
 
 def banner(text):
@@ -114,33 +122,68 @@ def step_npm_install(skip):
     run([npm, "install"], cwd=FRONTEND_DIR)
 
 
-def _pick_vina_asset(assets, system, machine):
-    """Return the best-matching release asset for this OS/architecture."""
-    system = system.lower()
-    machine = machine.lower()
+def _vina_platform():
+    """
+    Return (bundle_subfolder, official_release_asset_name) for this OS/CPU,
+    or (None, None) if there is no official AutoDock Vina build for it.
+    """
+    system = platform.system()
+    machine = platform.machine().lower()
     is_arm = machine in ("arm64", "aarch64")
 
-    def has(asset, *tokens):
-        name = asset["name"].lower()
-        return any(t in name for t in tokens)
-
-    if system == "windows":
-        matches = [a for a in assets if has(a, "win")]
-        return matches[0] if matches else None
-
-    if system == "darwin":
-        mac_assets = [a for a in assets if has(a, "mac", "osx", "darwin")]
-        arm_matches = [a for a in mac_assets if has(a, "aarch64", "arm64")]
-        intel_matches = [a for a in mac_assets if has(a, "x86_64", "x64")]
+    if system == "Windows":
+        return "windows", f"vina_{VINA_VERSION}_win.exe"
+    if system == "Darwin":
+        # Note: a Python running under Rosetta reports x86_64 even on Apple
+        # Silicon - the Intel build still works there, so that's fine.
         if is_arm:
-            return arm_matches[0] if arm_matches else (intel_matches[0] if intel_matches else None)
-        return intel_matches[0] if intel_matches else (arm_matches[0] if arm_matches else None)
+            return "macos-arm64", f"vina_{VINA_VERSION}_mac_aarch64"
+        return "macos-x86_64", f"vina_{VINA_VERSION}_mac_x86_64"
+    if system == "Linux":
+        if is_arm:
+            return "linux-aarch64", f"vina_{VINA_VERSION}_linux_aarch64"
+        if machine in ("x86_64", "amd64"):
+            return "linux-x86_64", f"vina_{VINA_VERSION}_linux_x86_64"
+    return None, None
 
-    if system == "linux":
-        matches = [a for a in assets if has(a, "linux") and has(a, "x86_64", "x64")]
-        return matches[0] if matches else None
 
-    return None
+def _make_runnable(path):
+    """chmod +x and, on macOS, drop the Gatekeeper quarantine flag.
+
+    When the project ZIP is downloaded with a browser, macOS marks every file
+    inside it as 'quarantined'; an unsigned command-line tool like vina would
+    then be blocked ("cannot be opened because the developer cannot be
+    verified"). Removing the flag on our own copy avoids that popup.
+    """
+    if platform.system() == "Windows":
+        return
+    os.chmod(path, 0o755)
+    if platform.system() == "Darwin":
+        subprocess.run(
+            ["xattr", "-d", "com.apple.quarantine", path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+
+def _vina_version(path):
+    """Run `vina --version`; return its output, or None if it doesn't run."""
+    try:
+        result = subprocess.run(
+            [path, "--version"], capture_output=True, text=True, timeout=20
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    out = (result.stdout + result.stderr).strip()
+    return out if "vina" in out.lower() else None
+
+
+def _download(url, target_path):
+    req = urllib.request.Request(url, headers={"User-Agent": "dynamic-dock-setup-script"})
+    tmp_path = target_path + ".part"
+    with urllib.request.urlopen(req, timeout=120) as resp, open(tmp_path, "wb") as out_file:
+        shutil.copyfileobj(resp, out_file)
+    os.replace(tmp_path, target_path)
 
 
 def step_download_vina(skip, force):
@@ -155,49 +198,54 @@ def step_download_vina(skip, force):
         return
 
     if os.path.isfile(target_path) and not force:
-        print(f"AutoDock Vina already present at {target_path}, skipping download.")
-        print("(Use --force-vina to re-download.)")
-        return
+        _make_runnable(target_path)
+        version = _vina_version(target_path)
+        if version:
+            print(f"AutoDock Vina already present at {target_path} ({version}).")
+            print("(Use --force-vina to replace it with the bundled v" + VINA_VERSION + ".)")
+            return
+        print(f"Existing {target_path} doesn't run on this machine - replacing it.")
 
-    print(f"Detecting AutoDock Vina release for {system} / {platform.machine()}...")
-    try:
-        req = urllib.request.Request(
-            VINA_RELEASES_API, headers={"User-Agent": "dynamic-dock-setup-script"}
-        )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            release = json.loads(resp.read().decode("utf-8"))
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as exc:
-        print(f"WARNING: could not reach GitHub to look up AutoDock Vina releases ({exc}).")
-        print(f"Please download it manually from {VINA_RELEASES_PAGE}")
+    subfolder, asset_name = _vina_platform()
+    if not subfolder:
+        print(f"WARNING: there is no official AutoDock Vina build for {system}/{platform.machine()}.")
+        print(f"Install it yourself (see {VINA_RELEASES_PAGE}, or 'conda install -c conda-forge vina')")
         print(f"and place the executable at: {target_path}")
         return
 
-    assets = release.get("assets", [])
-    asset = _pick_vina_asset(assets, system, platform.machine())
-    if not asset:
-        print(f"WARNING: no matching AutoDock Vina asset found for {system}/{platform.machine()}.")
-        print(f"Please download it manually from {VINA_RELEASES_PAGE}")
-        print(f"and place the executable at: {target_path}")
+    # 1) Preferred: the copy bundled with Dynamic Dock (works offline).
+    bundled = os.path.join(VINA_BUNDLE_DIR, subfolder, exe_name)
+    installed = False
+    if os.path.isfile(bundled):
+        print(f"Using the AutoDock Vina v{VINA_VERSION} bundled for {subfolder}...")
+        shutil.copy2(bundled, target_path)
+        installed = True
+    else:
+        # 2) Fallback: download the same pinned version from the official release.
+        url = VINA_DOWNLOAD_BASE + asset_name
+        print(f"Bundled binary not found; downloading {asset_name} ...")
+        try:
+            _download(url, target_path)
+            installed = True
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as exc:
+            print(f"WARNING: download failed ({exc}).")
+
+    if not installed:
+        print(f"Please download '{asset_name}' manually from {VINA_RELEASES_PAGE}")
+        print(f"and save it as: {target_path}")
         return
 
-    download_url = asset["browser_download_url"]
-    print(f"Downloading {asset['name']} ...")
-    try:
-        req = urllib.request.Request(
-            download_url, headers={"User-Agent": "dynamic-dock-setup-script"}
-        )
-        with urllib.request.urlopen(req, timeout=120) as resp, open(target_path, "wb") as out_file:
-            shutil.copyfileobj(resp, out_file)
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as exc:
-        print(f"WARNING: download failed ({exc}).")
-        print(f"Please download it manually from {VINA_RELEASES_PAGE}")
-        print(f"and place the executable at: {target_path}")
-        return
-
-    if system != "Windows":
-        os.chmod(target_path, 0o755)
-
-    print(f"AutoDock Vina installed at {target_path}")
+    _make_runnable(target_path)
+    version = _vina_version(target_path)
+    if version:
+        print(f"AutoDock Vina installed at {target_path} ({version}).")
+    else:
+        print(f"WARNING: AutoDock Vina was copied to {target_path} but didn't run a self-test.")
+        if system == "Darwin":
+            print("On macOS, if a security popup appeared, open System Settings > Privacy &")
+            print("Security and click 'Allow Anyway' for 'vina', then run setup again.")
+        elif system == "Windows":
+            print("Your antivirus may have blocked it - allow vina.exe and run setup again.")
 
 
 def _print_obabel_manual_instructions():
@@ -333,9 +381,9 @@ def step_install_obabel(skip):
 def main():
     parser = argparse.ArgumentParser(description="Set up Dynamic Dock (cross-platform).")
     parser.add_argument("--skip-npm", action="store_true", help="Skip `npm install` for the frontend.")
-    parser.add_argument("--skip-vina", action="store_true", help="Skip downloading AutoDock Vina.")
+    parser.add_argument("--skip-vina", action="store_true", help="Skip installing AutoDock Vina.")
     parser.add_argument(
-        "--force-vina", action="store_true", help="Re-download AutoDock Vina even if already present."
+        "--force-vina", action="store_true", help="Reinstall AutoDock Vina even if one is already present."
     )
     parser.add_argument("--skip-openbabel", action="store_true", help="Skip installing Open Babel.")
     args = parser.parse_args()
