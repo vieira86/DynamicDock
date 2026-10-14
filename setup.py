@@ -321,6 +321,45 @@ def _disable_known_broken_obabel_plugins(venv_bin_dir):
     return disabled_any
 
 
+# The Open Babel binaries in 'openbabel-wheel' need the Microsoft Visual C++
+# runtime (MSVCP140.dll, VCRUNTIME140.dll, VCRUNTIME140_1.dll). Most PCs already
+# have it, but a fresh Windows install doesn't, and then obabel.exe can't even
+# start (exit code 4294967295 / 3221225781). Microsoft allows these DLLs to be
+# shipped next to the program that uses them, so we copy them there:
+#   - msvcp140.dll comes inside the wheel itself (openbabel_wheel.libs/)
+#   - vcruntime140.dll / vcruntime140_1.dll come with every python.org Python
+VC_RUNTIME_DLLS = ["msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll"]
+VC_REDIST_URL = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+
+
+def _bundle_vc_runtime_for_obabel(venv_bin_dir):
+    """Windows only: copy the VC++ runtime DLLs next to Open Babel's obabel.exe."""
+    if platform.system() != "Windows":
+        return
+    plugin_dir = _obabel_plugin_dir(venv_bin_dir)
+    if not plugin_dir or not os.path.isdir(plugin_dir):
+        return
+    site_packages = os.path.dirname(os.path.dirname(plugin_dir))
+    search_dirs = [
+        os.path.join(site_packages, "openbabel_wheel.libs"),
+        sys.base_prefix,  # the real Python install behind the venv
+        os.path.dirname(sys.executable),
+    ]
+    for dll in VC_RUNTIME_DLLS:
+        target = os.path.join(plugin_dir, dll)
+        if os.path.isfile(target):
+            continue
+        for folder in search_dirs:
+            source = os.path.join(folder, dll)
+            if os.path.isfile(source):
+                try:
+                    shutil.copy2(source, target)
+                    print(f"Added {dll} next to Open Babel (Visual C++ runtime).")
+                except OSError as exc:
+                    print(f"WARNING: could not copy {dll}: {exc}")
+                break
+
+
 def step_install_obabel(skip):
     banner("4/4  Open Babel (obabel)")
     if skip:
@@ -358,6 +397,7 @@ def step_install_obabel(skip):
         return
 
     print(f"Open Babel installed at {candidate}")
+    _bundle_vc_runtime_for_obabel(venv_bin_dir)
     print("Verifying it actually runs...")
     if _obabel_health_check(candidate):
         print("Open Babel is working.")
@@ -375,6 +415,10 @@ def step_install_obabel(skip):
         "\nWARNING: Open Babel was installed but isn't working correctly on this "
         "machine (this can happen with certain Windows setups)."
     )
+    if platform.system() == "Windows":
+        print("First try installing the Microsoft Visual C++ Redistributable (free):")
+        print(f"    {VC_REDIST_URL}")
+        print("then run 'python setup.py' again.")
     _print_obabel_manual_instructions()
 
 
