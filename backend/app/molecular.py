@@ -31,7 +31,6 @@ class LigandSelect(Select):
 class MolecularHandler:
     def __init__(self):
         self.parser = PDB.PDBParser(QUIET=True)
-        self.pdbl = PDB.PDBList()
         self.io = PDBIO()
 
     # ---------------------------
@@ -46,12 +45,8 @@ class MolecularHandler:
             os.makedirs(pdb_dir, exist_ok=True)
             
             print(f"Downloading PDB structure '{pdb_id}'...")
-            pdb_path = self.pdbl.retrieve_pdb_file(
-                pdb_id,
-                pdir=pdb_dir,
-                file_format="pdb"
-            )
-            
+            pdb_path = self._download_pdb(pdb_id, pdb_dir)
+
             # Verify file was downloaded and exists
             if not os.path.exists(pdb_path):
                 raise FileNotFoundError(f"PDB file not found after download: {pdb_path}")
@@ -72,6 +67,42 @@ class MolecularHandler:
                 raise ConnectionError(f"Network error while downloading PDB '{pdb_id}': {str(e)}")
             else:
                 raise Exception(f"Failed to download PDB '{pdb_id}': {str(e)}")
+
+    def _download_pdb(self, pdb_id: str, pdb_dir: str) -> str:
+        """
+        Download a PDB file from RCSB using `requests`.
+
+        Biopython's PDBList uses urllib, which on Windows relies on the system
+        certificate store; on fresh Windows installs that store is often
+        incomplete and every download fails with "CERTIFICATE_VERIFY_FAILED".
+        `requests` ships its own up-to-date CA bundle (certifi), so this works
+        the same on Windows, macOS and Linux. The file name matches what
+        PDBList used to produce (pdbXXXX.ent), so the rest of the app is
+        unaffected.
+        """
+        pdb_id = pdb_id.strip().lower()
+        pdb_path = os.path.join(pdb_dir, f"pdb{pdb_id}.ent")
+        if os.path.isfile(pdb_path) and os.path.getsize(pdb_path) > 0:
+            return pdb_path
+
+        url = f"https://files.rcsb.org/download/{pdb_id.upper()}.pdb"
+        try:
+            response = requests.get(url, timeout=30)
+        except requests.exceptions.RequestException as exc:
+            raise ConnectionError(f"Network connection error: {exc}")
+
+        if response.status_code == 404:
+            raise FileNotFoundError(
+                f"PDB '{pdb_id.upper()}' not found (or only available in mmCIF format, "
+                f"which is used for very large structures)"
+            )
+        response.raise_for_status()
+
+        tmp_path = pdb_path + ".part"
+        with open(tmp_path, "wb") as fh:
+            fh.write(response.content)
+        os.replace(tmp_path, pdb_path)
+        return pdb_path
 
     # ---------------------------
     # ANALYSIS
